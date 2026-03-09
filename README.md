@@ -139,7 +139,7 @@ The plugin expects a URL that returns plain text dotenv content over HTTPS. The 
 No credentials required.
 
 ```text
-https://raw.githubusercontent.com/your-org/remote-env-file-fixture/main/examples/public.env
+https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/public.env
 ```
 
 Pipeline example:
@@ -147,7 +147,7 @@ Pipeline example:
 ```groovy
 wrap([
   $class: 'RemoteEnvFileBuildWrapper',
-  sourceUrl: 'https://raw.githubusercontent.com/your-org/remote-env-file-fixture/main/examples/public.env'
+  sourceUrl: 'https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/public.env'
 ]) {
   sh 'echo "$APP_NAME"'
 }
@@ -209,6 +209,43 @@ Useful for simple public demos.
 
 ```text
 https://gist.githubusercontent.com/your-user/0123456789abcdef/raw/0123456789abcdef/example.env
+```
+
+## Test fixtures in this repository
+
+This repository now includes ready-to-use fixture files under `examples/`.
+
+Successful fetches:
+
+- `https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/public.env`
+- `https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/quoted.env`
+
+Intentional failure cases:
+
+- `https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/invalid-export.env`
+- `https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/duplicate-keys.env`
+- `https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/interpolation.env`
+
+Quick test Jenkinsfile:
+
+```groovy
+pipeline {
+  agent any
+
+  stages {
+    stage('Verify Remote Env') {
+      steps {
+        wrap([
+          $class: 'RemoteEnvFileBuildWrapper',
+          sourceUrl: 'https://raw.githubusercontent.com/THelsby/remote-env-file/main/examples/public.env'
+        ]) {
+          sh 'test "$APP_NAME" = "remote-env-file-demo"'
+          sh 'test "$QUOTED_MESSAGE" = "loaded from GitHub raw"'
+        }
+      }
+    }
+  }
+}
 ```
 
 ## URL guidance
