@@ -16,12 +16,12 @@
 
   <name>Remote Env File</name>
   <description>Loads environment variables from a remote HTTPS dotenv file for freestyle and Pipeline jobs.</description>
-  <url>https://github.com/THelsby/remote-env-file</url>
+  <url>https://github.com/THelsby/remote-env-file-plugin</url>
 
   <scm>
-    <connection>scm:git:https://github.com/THelsby/remote-env-file.git</connection>
-    <developerConnection>scm:git:git@github.com:THelsby/remote-env-file.git</developerConnection>
-    <url>https://github.com/THelsby/remote-env-file</url>
+    <connection>scm:git:https://github.com/THelsby/remote-env-file-plugin.git</connection>
+    <developerConnection>scm:git:git@github.com:THelsby/remote-env-file-plugin.git</developerConnection>
+    <url>https://github.com/THelsby/remote-env-file-plugin</url>
     <tag>${scmTag}</tag>
   </scm>
 
