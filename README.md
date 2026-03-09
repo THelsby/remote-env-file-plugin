@@ -387,3 +387,7 @@ pipeline {
 ```
 
 If the build fails, the console log will tell you whether the problem is URL validation, authentication, dotenv parsing, size limits, or variable collisions.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

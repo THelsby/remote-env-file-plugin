@@ -25,6 +25,13 @@
     <tag>${scmTag}</tag>
   </scm>
 
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
   <properties>
     <revision>1.0.0</revision>
     <changelist>-SNAPSHOT</changelist>
