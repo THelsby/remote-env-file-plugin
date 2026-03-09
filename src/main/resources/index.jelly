@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<div>
+  Loads environment variables from a remote HTTPS dotenv file into a build wrapper scope.
+</div>

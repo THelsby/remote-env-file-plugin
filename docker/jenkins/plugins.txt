@@ -1,0 +1,3 @@
+credentials
+plain-credentials
+workflow-aggregator

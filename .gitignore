@@ -1,0 +1,8 @@
+target/
+work/
+.idea/
+.vscode/
+*.iml
+*.hpi
+*.jpi
+*.log
