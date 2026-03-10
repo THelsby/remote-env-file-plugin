@@ -7,6 +7,8 @@ import java.io.StringReader;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 final class DotenvParser {
@@ -18,6 +20,7 @@ final class DotenvParser {
 
     static Map<String, String> parse(String content) throws IOException {
         Map<String, String> values = new LinkedHashMap<>();
+        Set<String> seenKeys = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         try (BufferedReader reader = new BufferedReader(new StringReader(content))) {
             String line;
             int lineNumber = 0;
@@ -44,10 +47,10 @@ final class DotenvParser {
 
                 String rawValue = normalized.substring(separator + 1).trim();
                 String value = parseValue(lineNumber, rawValue);
-                String previous = values.putIfAbsent(key, value);
-                if (previous != null) {
+                if (!seenKeys.add(key)) {
                     throw error(lineNumber, "duplicate variable '" + key + "'");
                 }
+                values.put(key, value);
             }
         }
         return Collections.unmodifiableMap(values);

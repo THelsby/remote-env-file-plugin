@@ -1,47 +1,32 @@
 package io.jenkins.plugins.remoteenvfile;
 
-import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.AbstractProject;
-import hudson.model.Item;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.tasks.BuildWrapperDescriptor;
-import hudson.util.ListBoxModel;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import jenkins.tasks.SimpleBuildWrapper;
-import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.DataBoundSetter;
-import org.kohsuke.stapler.QueryParameter;
 
 public class RemoteEnvFileBuildWrapper extends SimpleBuildWrapper {
 
     static final int MAX_RESPONSE_BYTES = RemoteEnvFileFetcher.MAX_RESPONSE_BYTES;
 
-    private final String sourceUrl;
-    private String credentialsId;
+    private final List<RemoteEnvSource> sources;
 
     @DataBoundConstructor
-    public RemoteEnvFileBuildWrapper(String sourceUrl) {
-        this.sourceUrl = hudson.Util.fixNull(sourceUrl);
+    public RemoteEnvFileBuildWrapper(List<RemoteEnvSource> sources) {
+        this.sources = RemoteEnvSource.normalize(sources);
     }
 
-    public String getSourceUrl() {
-        return sourceUrl;
-    }
-
-    public String getCredentialsId() {
-        return credentialsId;
-    }
-
-    @DataBoundSetter
-    public void setCredentialsId(String credentialsId) {
-        this.credentialsId = hudson.Util.fixEmptyAndTrim(credentialsId);
+    public List<RemoteEnvSource> getSources() {
+        return sources;
     }
 
     @Override
@@ -60,8 +45,7 @@ public class RemoteEnvFileBuildWrapper extends SimpleBuildWrapper {
         Map<String, String> parsed = RemoteEnvFileResolver.loadOnAgent(
                 build,
                 initialEnvironment,
-                sourceUrl,
-                credentialsId,
+                sources,
                 workspace,
                 listener);
         for (Map.Entry<String, String> entry : parsed.entrySet()) {
@@ -80,22 +64,6 @@ public class RemoteEnvFileBuildWrapper extends SimpleBuildWrapper {
         @Override
         public String getDisplayName() {
             return "Load environment variables from a remote HTTPS dotenv file";
-        }
-
-        public hudson.util.FormValidation doCheckSourceUrl(@QueryParameter String value) {
-            try {
-                RemoteEnvFileResolver.validateSourceUrl(value);
-                return hudson.util.FormValidation.ok();
-            } catch (AbortException exception) {
-                return hudson.util.FormValidation.error(exception.getMessage());
-            }
-        }
-
-        public ListBoxModel doFillCredentialsIdItems(
-                @AncestorInPath Item item,
-                @QueryParameter String credentialsId,
-                @QueryParameter String sourceUrl) {
-            return RemoteEnvFileCredentials.fillCredentialsIdItems(item, credentialsId, sourceUrl);
         }
     }
 }

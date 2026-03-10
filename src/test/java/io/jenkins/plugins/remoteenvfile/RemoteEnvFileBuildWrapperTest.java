@@ -2,6 +2,7 @@ package io.jenkins.plugins.remoteenvfile;
 
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
+import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import hudson.EnvVars;
 import hudson.Launcher;
 import hudson.model.AbstractBuild;
@@ -34,7 +35,6 @@ import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
-import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -53,7 +53,7 @@ public class RemoteEnvFileBuildWrapperTest {
                     .setBody("# comment\nFOO=bar\nQUOTED=\"two words\"\nEMPTY=\n"));
 
             FreeStyleProject project = r.createFreeStyleProject();
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/env.env")));
+            project.getBuildWrappersList().add(wrapper(source(server.url("/env.env"))));
             project.getBuildersList().add(new AssertEnvBuilder(
                     Map.of("FOO", "bar", "QUOTED", "two words"),
                     Collections.emptySet()));
@@ -87,9 +87,7 @@ public class RemoteEnvFileBuildWrapperTest {
                     Secret.fromString("bearer-secret")));
 
             FreeStyleProject project = r.createFreeStyleProject();
-            RemoteEnvFileBuildWrapper wrapper = new RemoteEnvFileBuildWrapper(server.url("/secure.env"));
-            wrapper.setCredentialsId("bearer-creds");
-            project.getBuildWrappersList().add(wrapper);
+            project.getBuildWrappersList().add(wrapper(source(server.url("/secure.env"), "bearer-creds")));
             project.getBuildersList().add(new AssertEnvBuilder(Map.of("TOKEN_OK", "yes"), Collections.emptySet()));
 
             FreeStyleBuild build = r.buildAndAssertSuccess(project);
@@ -121,9 +119,7 @@ public class RemoteEnvFileBuildWrapperTest {
                     "basic-secret"));
 
             FreeStyleProject project = r.createFreeStyleProject();
-            RemoteEnvFileBuildWrapper wrapper = new RemoteEnvFileBuildWrapper(server.url("/basic.env"));
-            wrapper.setCredentialsId("basic-creds");
-            project.getBuildWrappersList().add(wrapper);
+            project.getBuildWrappersList().add(wrapper(source(server.url("/basic.env"), "basic-creds")));
             project.getBuildersList().add(new AssertEnvBuilder(Map.of("BASIC_OK", "yes"), Collections.emptySet()));
 
             FreeStyleBuild build = r.buildAndAssertSuccess(project);
@@ -148,7 +144,7 @@ public class RemoteEnvFileBuildWrapperTest {
             FreeStyleProject project = r.createFreeStyleProject();
             project.addProperty(new hudson.model.ParametersDefinitionProperty(
                     new hudson.model.StringParameterDefinition("ENV_FILE_PATH", "expanded.env")));
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/") + "${ENV_FILE_PATH}"));
+            project.getBuildWrappersList().add(wrapper(source(server.url("/") + "${ENV_FILE_PATH}")));
             project.getBuildersList().add(new AssertEnvBuilder(Map.of("EXPANDED", "yes"), Collections.emptySet()));
 
             FreeStyleBuild build = project.scheduleBuild2(
@@ -180,7 +176,7 @@ public class RemoteEnvFileBuildWrapperTest {
             });
 
             FreeStyleProject project = r.createFreeStyleProject();
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/redirect.env")));
+            project.getBuildWrappersList().add(wrapper(source(server.url("/redirect.env"))));
             project.getBuildersList().add(new AssertEnvBuilder(Map.of("REDIRECT_OK", "yes"), Collections.emptySet()));
 
             r.buildAndAssertSuccess(project);
@@ -189,15 +185,61 @@ public class RemoteEnvFileBuildWrapperTest {
     }
 
     @Test
-    public void failsWhenRemoteFetchReturnsErrorStatus() throws Exception {
+    public void mergesMultipleSourcesForFreestyleBuild() throws Exception {
         try (HttpsTestServer server = new HttpsTestServer()) {
-            server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND));
+            server.server.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    if ("/base.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                                .setBody("APP_MODE=base\nBASE_ONLY=yes\n");
+                    }
+                    if ("/prod.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                                .setBody("APP_MODE=prod\nPROD_ONLY=yes\n");
+                    }
+                    return new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND);
+                }
+            });
 
             FreeStyleProject project = r.createFreeStyleProject();
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/missing.env")));
+            project.getBuildWrappersList().add(wrapper(
+                    source(server.url("/base.env")),
+                    source(server.url("/prod.env"))));
+            project.getBuildersList().add(new AssertEnvBuilder(
+                    Map.of("APP_MODE", "prod", "BASE_ONLY", "yes", "PROD_ONLY", "yes"),
+                    Collections.emptySet()));
+
+            FreeStyleBuild build = r.buildAndAssertSuccess(project);
+            Assert.assertEquals(2, server.server.getRequestCount());
+            r.assertLogContains("Loaded 3 merged environment variable(s) from 2 remote source(s)", build);
+        }
+    }
+
+    @Test
+    public void failsWhenAnyConfiguredSourceReturnsErrorStatus() throws Exception {
+        try (HttpsTestServer server = new HttpsTestServer()) {
+            server.server.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    if ("/base.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK).setBody("BASE_OK=yes\n");
+                    }
+                    if ("/missing.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND);
+                    }
+                    return new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND);
+                }
+            });
+
+            FreeStyleProject project = r.createFreeStyleProject();
+            project.getBuildWrappersList().add(wrapper(
+                    source(server.url("/base.env")),
+                    source(server.url("/missing.env"))));
 
             FreeStyleBuild build = project.scheduleBuild2(0).get();
             r.assertBuildStatus(Result.FAILURE, build);
+            Assert.assertEquals(2, server.server.getRequestCount());
             r.assertLogContains("HTTP 404", build);
         }
     }
@@ -209,7 +251,7 @@ public class RemoteEnvFileBuildWrapperTest {
                     .setBody("export BAD=value\n"));
 
             FreeStyleProject project = r.createFreeStyleProject();
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/invalid.env")));
+            project.getBuildWrappersList().add(wrapper(source(server.url("/invalid.env"))));
 
             FreeStyleBuild build = project.scheduleBuild2(0).get();
             r.assertBuildStatus(Result.FAILURE, build);
@@ -221,19 +263,48 @@ public class RemoteEnvFileBuildWrapperTest {
     public void failsWhenRemoteVariablesConflictWithExistingEnvironment() throws Exception {
         try (HttpsTestServer server = new HttpsTestServer()) {
             server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
-                    .setBody("COLLIDE=override\n"));
+                    .setBody("APP_MODE=override\n"));
 
             FreeStyleProject project = r.createFreeStyleProject();
             project.addProperty(new hudson.model.ParametersDefinitionProperty(
-                    new hudson.model.StringParameterDefinition("COLLIDE", "original")));
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/collision.env")));
+                    new hudson.model.StringParameterDefinition("App_Mode", "original")));
+            project.getBuildWrappersList().add(wrapper(source(server.url("/collision.env"))));
 
             FreeStyleBuild build = project.scheduleBuild2(
                     0,
-                    new ParametersAction(new StringParameterValue("COLLIDE", "original"))).get();
+                    new ParametersAction(new StringParameterValue("App_Mode", "original"))).get();
             r.assertBuildStatus(Result.FAILURE, build);
 
             r.assertLogContains("conflicts with an existing build environment variable", build);
+        }
+    }
+
+    @Test
+    public void failsWhenRemoteVariablesContainBlockedPathVariable() throws Exception {
+        try (HttpsTestServer server = new HttpsTestServer()) {
+            server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK).setBody("Path=override\n"));
+
+            FreeStyleProject project = r.createFreeStyleProject();
+            project.getBuildWrappersList().add(wrapper(source(server.url("/blocked-path.env"))));
+
+            FreeStyleBuild build = project.scheduleBuild2(0).get();
+            r.assertBuildStatus(Result.FAILURE, build);
+            r.assertLogContains("special OS/process-loading variable", build);
+        }
+    }
+
+    @Test
+    public void failsWhenRemoteVariablesContainBlockedLoaderVariable() throws Exception {
+        try (HttpsTestServer server = new HttpsTestServer()) {
+            server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                    .setBody("LD_PRELOAD=/tmp/evil.so\n"));
+
+            FreeStyleProject project = r.createFreeStyleProject();
+            project.getBuildWrappersList().add(wrapper(source(server.url("/blocked-loader.env"))));
+
+            FreeStyleBuild build = project.scheduleBuild2(0).get();
+            r.assertBuildStatus(Result.FAILURE, build);
+            r.assertLogContains("special OS/process-loading variable", build);
         }
     }
 
@@ -244,7 +315,7 @@ public class RemoteEnvFileBuildWrapperTest {
             server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK).setBody(oversized));
 
             FreeStyleProject project = r.createFreeStyleProject();
-            project.getBuildWrappersList().add(new RemoteEnvFileBuildWrapper(server.url("/large.env")));
+            project.getBuildWrappersList().add(wrapper(source(server.url("/large.env"))));
 
             FreeStyleBuild build = project.scheduleBuild2(0).get();
             r.assertBuildStatus(Result.FAILURE, build);
@@ -255,46 +326,123 @@ public class RemoteEnvFileBuildWrapperTest {
     @Test
     public void makesVariablesVisibleOnlyInsidePipelineWrapperScope() throws Exception {
         try (HttpsTestServer server = new HttpsTestServer()) {
-            server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
-                    .setBody("PIPELINE_ONLY=inside\n"));
+            server.server.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    if ("/base.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                                .setBody("PIPELINE_ONLY=inside\nAPP_MODE=base\n");
+                    }
+                    if ("/override.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                                .setBody("app_mode=override\n");
+                    }
+                    return new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND);
+                }
+            });
 
             WorkflowJob job = r.createProject(WorkflowJob.class, "pipeline");
             job.setDefinition(new CpsFlowDefinition(
                     "node {\n"
-                            + "  wrap([$class: 'RemoteEnvFileBuildWrapper', sourceUrl: '" + escapeGroovy(server.url("/pipeline.env")) + "']) {\n"
+                            + "  wrap([$class: 'RemoteEnvFileBuildWrapper', sources: [\n"
+                            + "    [sourceUrl: '" + escapeGroovy(server.url("/base.env")) + "'],\n"
+                            + "    [sourceUrl: '" + escapeGroovy(server.url("/override.env")) + "']\n"
+                            + "  ]]) {\n"
                             + "    if (env.PIPELINE_ONLY != 'inside') { error('missing inside wrapper') }\n"
+                            + "    if (env.app_mode != 'override') { error('missing overridden wrapper value') }\n"
                             + "  }\n"
                             + "  if (env.PIPELINE_ONLY != null) { error('value leaked outside wrapper') }\n"
+                            + "  if (env.app_mode != null) { error('override leaked outside wrapper') }\n"
                             + "  echo 'pipeline assertions passed'\n"
                             + "}\n",
                     true));
 
             WorkflowRun build = r.buildAndAssertSuccess(job);
-            Assert.assertEquals(1, server.server.getRequestCount());
+            Assert.assertEquals(2, server.server.getRequestCount());
             r.assertLogContains("pipeline assertions passed", build);
             r.assertLogNotContains("inside", build);
         }
     }
 
     @Test
-    public void makesJobLevelVariablesVisibleAcrossPipelineRun() throws Exception {
+    public void failsWhenPipelineWrapperLoadsBlockedVariable() throws Exception {
         try (HttpsTestServer server = new HttpsTestServer()) {
             server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
-                    .setBody("PIPELINE_JOB=configured\n"));
+                    .setBody("DYLD_LIBRARY_PATH=/tmp/injected\n"));
+
+            WorkflowJob job = r.createProject(WorkflowJob.class, "pipeline-blocked-wrapper");
+            job.setDefinition(new CpsFlowDefinition(
+                    "node {\n"
+                            + "  wrap([$class: 'RemoteEnvFileBuildWrapper', sources: [[sourceUrl: '"
+                            + escapeGroovy(server.url("/blocked-pipeline.env"))
+                            + "']]]) {\n"
+                            + "    error('wrapper should have failed before this point')\n"
+                            + "  }\n"
+                            + "}\n",
+                    true));
+
+            WorkflowRun build = job.scheduleBuild2(0).get();
+            r.assertBuildStatus(Result.FAILURE, build);
+            r.assertLogContains("special OS/process-loading variable", build);
+        }
+    }
+
+    @Test
+    public void makesJobLevelVariablesVisibleAcrossPipelineRun() throws Exception {
+        try (HttpsTestServer server = new HttpsTestServer()) {
+            server.server.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    if ("/base.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                                .setBody("PIPELINE_JOB=configured\nPIPELINE_MODE=base\n");
+                    }
+                    if ("/override.env".equals(request.getPath())) {
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                                .setBody("pipeline_mode=job-property-override\n");
+                    }
+                    return new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND);
+                }
+            });
 
             WorkflowJob job = r.createProject(WorkflowJob.class, "pipeline-job-property");
-            job.addProperty(new RemoteEnvFileJobProperty(server.url("/job-property.env")));
+            job.addProperty(jobProperty(
+                    source(server.url("/base.env")),
+                    source(server.url("/override.env"))));
             job.setDefinition(new CpsFlowDefinition(
                     "if (env.PIPELINE_JOB != 'configured') { error('missing job property env') }\n"
+                            + "if (env.pipeline_mode != 'job-property-override') { error('missing overridden job property env') }\n"
                             + "node {\n"
                             + "  echo 'job property assertions passed'\n"
                             + "}\n",
                     true));
 
             WorkflowRun build = r.buildAndAssertSuccess(job);
-            Assert.assertEquals(1, server.server.getRequestCount());
+            Assert.assertEquals(2, server.server.getRequestCount());
             r.assertLogContains("job property assertions passed", build);
             r.assertLogNotContains("configured", build);
+        }
+    }
+
+    @Test
+    public void failsWhenJobLevelConfigurationLoadsBlockedVariable() throws Exception {
+        try (HttpsTestServer server = new HttpsTestServer()) {
+            server.server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK)
+                    .setBody("LD_PRELOAD=/tmp/evil.so\n"));
+
+            WorkflowJob job = r.createProject(WorkflowJob.class, "pipeline-job-property-blocked");
+            job.addProperty(jobProperty(source(server.url("/job-property-blocked.env"))));
+            job.setDefinition(new CpsFlowDefinition(
+                    "node {\n"
+                            + "  echo 'this should not run'\n"
+                            + "}\n",
+                    true));
+
+            WorkflowRun build = job.scheduleBuild2(0).get();
+            r.assertBuildStatus(Result.FAILURE, build);
+            Assert.assertEquals(1, server.server.getRequestCount());
+            r.assertLogContains("special OS/process-loading variable", build);
+            r.assertLogNotContains("this should not run", build);
         }
     }
 
@@ -306,8 +454,65 @@ public class RemoteEnvFileBuildWrapperTest {
         String html = page.asXml();
 
         Assert.assertEquals(1, countOccurrences(html, "Load environment variables from a remote HTTPS dotenv file"));
+        Assert.assertTrue(html.contains("sources"));
         Assert.assertTrue(html.contains("sourceUrl"));
         Assert.assertTrue(html.contains("credentialsId"));
+        Assert.assertTrue(html.contains("does not mask or protect"));
+    }
+
+    @Test
+    public void honorsDifferentCredentialsPerSource() throws Exception {
+        try (HttpsTestServer server = new HttpsTestServer()) {
+            AtomicReference<String> bearerHeader = new AtomicReference<>();
+            AtomicReference<String> basicHeader = new AtomicReference<>();
+            server.server.setDispatcher(new Dispatcher() {
+                @Override
+                public MockResponse dispatch(RecordedRequest request) {
+                    if ("/bearer.env".equals(request.getPath())) {
+                        bearerHeader.set(request.getHeader("Authorization"));
+                        if (!"Bearer bearer-secret".equals(bearerHeader.get())) {
+                            return new MockResponse().setResponseCode(HttpURLConnection.HTTP_UNAUTHORIZED);
+                        }
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK).setBody("BEARER_OK=yes\n");
+                    }
+                    if ("/basic.env".equals(request.getPath())) {
+                        basicHeader.set(request.getHeader("Authorization"));
+                        if (basicHeader.get() == null || !basicHeader.get().startsWith("Basic ")) {
+                            return new MockResponse().setResponseCode(HttpURLConnection.HTTP_UNAUTHORIZED);
+                        }
+                        return new MockResponse().setResponseCode(HttpURLConnection.HTTP_OK).setBody("BASIC_OK=yes\n");
+                    }
+                    return new MockResponse().setResponseCode(HttpURLConnection.HTTP_NOT_FOUND);
+                }
+            });
+
+            addCredential(new StringCredentialsImpl(
+                    CredentialsScope.GLOBAL,
+                    "bearer-creds",
+                    "Bearer test credential",
+                    Secret.fromString("bearer-secret")));
+            addCredential(new UsernamePasswordCredentialsImpl(
+                    CredentialsScope.GLOBAL,
+                    "basic-creds",
+                    "Basic auth credential",
+                    "jenkins",
+                    "basic-secret"));
+
+            FreeStyleProject project = r.createFreeStyleProject();
+            project.getBuildWrappersList().add(wrapper(
+                    source(server.url("/bearer.env"), "bearer-creds"),
+                    source(server.url("/basic.env"), "basic-creds")));
+            project.getBuildersList().add(new AssertEnvBuilder(
+                    Map.of("BEARER_OK", "yes", "BASIC_OK", "yes"),
+                    Collections.emptySet()));
+
+            FreeStyleBuild build = r.buildAndAssertSuccess(project);
+            Assert.assertEquals("Bearer bearer-secret", bearerHeader.get());
+            Assert.assertNotNull(basicHeader.get());
+            Assert.assertTrue(basicHeader.get().startsWith("Basic "));
+            r.assertLogNotContains("bearer-secret", build);
+            r.assertLogNotContains("basic-secret", build);
+        }
     }
 
     @Test
@@ -325,21 +530,13 @@ public class RemoteEnvFileBuildWrapperTest {
                 "basic-secret"));
 
         FreeStyleProject freestyle = r.createFreeStyleProject();
-        WorkflowJob pipeline = r.createProject(WorkflowJob.class, "pipeline-job-dropdown");
-
-        List<String> buildWrapperValues = listBoxValues(r.jenkins
-                .getDescriptorByType(RemoteEnvFileBuildWrapper.DescriptorImpl.class)
+        List<String> sourceValues = listBoxValues(r.jenkins
+                .getDescriptorByType(RemoteEnvSource.DescriptorImpl.class)
                 .doFillCredentialsIdItems(freestyle, null, "https://example.com/env.env"));
-        List<String> jobPropertyValues = listBoxValues(r.jenkins
-                .getDescriptorByType(RemoteEnvFileJobProperty.DescriptorImpl.class)
-                .doFillCredentialsIdItems(pipeline, null, "https://example.com/env.env"));
 
-        Assert.assertTrue(buildWrapperValues.contains(""));
-        Assert.assertTrue(buildWrapperValues.contains("bearer-creds"));
-        Assert.assertTrue(buildWrapperValues.contains("basic-creds"));
-        Assert.assertTrue(jobPropertyValues.contains(""));
-        Assert.assertTrue(jobPropertyValues.contains("bearer-creds"));
-        Assert.assertTrue(jobPropertyValues.contains("basic-creds"));
+        Assert.assertTrue(sourceValues.contains(""));
+        Assert.assertTrue(sourceValues.contains("bearer-creds"));
+        Assert.assertTrue(sourceValues.contains("basic-creds"));
     }
 
     private void addCredential(com.cloudbees.plugins.credentials.Credentials credential) throws IOException {
@@ -364,6 +561,24 @@ public class RemoteEnvFileBuildWrapperTest {
 
     private static List<String> listBoxValues(ListBoxModel model) {
         return model.stream().map(option -> option.value).toList();
+    }
+
+    private static RemoteEnvFileBuildWrapper wrapper(RemoteEnvSource... sources) {
+        return new RemoteEnvFileBuildWrapper(List.of(sources));
+    }
+
+    private static RemoteEnvFileJobProperty jobProperty(RemoteEnvSource... sources) {
+        return new RemoteEnvFileJobProperty(List.of(sources));
+    }
+
+    private static RemoteEnvSource source(String sourceUrl) {
+        return source(sourceUrl, null);
+    }
+
+    private static RemoteEnvSource source(String sourceUrl, String credentialsId) {
+        RemoteEnvSource source = new RemoteEnvSource(sourceUrl);
+        source.setCredentialsId(credentialsId);
+        return source;
     }
 
     private static final class AssertEnvBuilder extends TestBuilder {

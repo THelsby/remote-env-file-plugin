@@ -32,6 +32,12 @@ public class DotenvParserTest {
     }
 
     @Test
+    public void rejectsDuplicateKeysThatDifferOnlyByCase() {
+        AbortException exception = parseFailure("FOO=one\nfoo=two\n");
+        Assert.assertTrue(exception.getMessage().contains("duplicate variable 'foo'"));
+    }
+
+    @Test
     public void rejectsMalformedKeys() {
         AbortException exception = parseFailure("1BAD=value\n");
         Assert.assertTrue(exception.getMessage().contains("invalid variable name"));

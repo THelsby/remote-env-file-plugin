@@ -6,3 +6,5 @@ work/
 *.hpi
 *.jpi
 *.log
+/docker/fixture/certs/*.crt
+/docker/fixture/certs/*.key

@@ -1,8 +1,19 @@
 services:
+  env-fixture:
+    image: nginx:1.27-alpine
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./examples:/usr/share/nginx/html:ro
+      - ./docker/fixture/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/fixture/certs:/etc/nginx/certs:ro
+
   jenkins:
     build:
       context: .
       dockerfile: docker/jenkins/Dockerfile
+    depends_on:
+      - env-fixture
     ports:
       - "8080:8080"
       - "50000:50000"
