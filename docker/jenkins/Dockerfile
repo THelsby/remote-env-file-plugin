@@ -23,12 +23,14 @@ COPY docker/jenkins/plugins.txt /usr/share/jenkins/ref/plugins.txt
 RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 
 COPY docker/jenkins/init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/
+COPY examples/jobdsl/ /usr/share/jenkins/ref/jobdsl/
 COPY docker/jenkins/jenkins-dev.sh /usr/local/bin/jenkins-dev.sh
 COPY --from=builder /workspace/target/remote-env-file.hpi /usr/share/jenkins/ref/plugins/remote-env-file.jpi
 
 RUN chmod 755 /usr/local/bin/jenkins-dev.sh \
     && chown -R jenkins:jenkins \
         /usr/share/jenkins/ref/init.groovy.d \
+        /usr/share/jenkins/ref/jobdsl \
         /usr/share/jenkins/ref/plugins/remote-env-file.jpi \
         /usr/local/share/ca-certificates/env-fixture.crt
 
