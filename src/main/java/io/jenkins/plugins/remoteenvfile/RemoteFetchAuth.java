@@ -1,7 +1,7 @@
 package io.jenkins.plugins.remoteenvfile;
 
 import java.io.Serializable;
-import java.net.HttpURLConnection;
+import java.net.http.HttpRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -31,17 +31,17 @@ final class RemoteFetchAuth implements Serializable {
         return new RemoteFetchAuth(Kind.BASIC, username, password);
     }
 
-    void apply(HttpURLConnection connection) {
+    void apply(HttpRequest.Builder requestBuilder) {
         switch (kind) {
         case NONE:
             return;
         case BEARER:
-            connection.setRequestProperty("Authorization", "Bearer " + first);
+            requestBuilder.header("Authorization", "Bearer " + first);
             return;
         case BASIC:
             String joined = first + ":" + second;
             String encoded = Base64.getEncoder().encodeToString(joined.getBytes(StandardCharsets.UTF_8));
-            connection.setRequestProperty("Authorization", "Basic " + encoded);
+            requestBuilder.header("Authorization", "Basic " + encoded);
             return;
         default:
             throw new IllegalStateException("Unsupported auth type: " + kind);

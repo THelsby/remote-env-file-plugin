@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import jenkins.tasks.SimpleBuildWrapper;
+import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
 
 public class RemoteEnvFileBuildWrapper extends SimpleBuildWrapper {
@@ -53,6 +54,7 @@ public class RemoteEnvFileBuildWrapper extends SimpleBuildWrapper {
         }
     }
 
+    @Symbol("withRemoteEnvFiles")
     @Extension
     public static class DescriptorImpl extends BuildWrapperDescriptor {
 

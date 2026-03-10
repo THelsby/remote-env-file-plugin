@@ -12,6 +12,7 @@ It is designed for cases where configuration lives outside Jenkins, for example 
   - no credentials: anonymous request
   - Secret Text credential: `Authorization: Bearer <token>`
   - Username with password credential: HTTP Basic auth
+- Exposes a first-class Pipeline step: `withRemoteEnvFiles(...)`
 - Expands Jenkins environment variables in each `sourceUrl` and `credentialsId` before resolving them.
 - Rejects duplicate keys inside a single remote file, including keys that differ only by case such as `FOO` and `foo`.
 - Rejects special OS/process-loading variables such as `PATH`, `PATHEXT`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `LIBPATH`, and `SHLIB_PATH`.
@@ -81,18 +82,17 @@ In the Pipeline job configuration:
 
 This job-level mode applies the fetched values to the Pipeline run after the build starts, fails the run before user steps if loading fails, and caches the merged values for that run.
 
-### 3. Pipeline `wrap(...)`
+### 3. Pipeline `withRemoteEnvFiles(...)`
 
 Use this when only part of the Pipeline should see the variables, or when you explicitly want the fetch to happen from the selected agent workspace context.
 
+The plugin exposes `withRemoteEnvFiles(...)` directly in Pipeline and in the Jenkins snippetizer.
+
 ```groovy
 node {
-  wrap([
-    $class: 'RemoteEnvFileBuildWrapper',
-    sources: [
-      [sourceUrl: 'https://raw.githubusercontent.com/your-org/your-repo/main/config/base.env'],
-      [sourceUrl: 'https://raw.githubusercontent.com/your-org/your-repo/main/config/prod.env']
-    ]
+  withRemoteEnvFiles(sources: [
+    [sourceUrl: 'https://raw.githubusercontent.com/your-org/your-repo/main/config/base.env'],
+    [sourceUrl: 'https://raw.githubusercontent.com/your-org/your-repo/main/config/prod.env']
   ]) {
     sh 'printenv | sort'
     sh './gradlew test'
@@ -100,7 +100,7 @@ node {
 }
 ```
 
-Variables loaded through `wrap(...)` exist only inside the wrapped block.
+Variables loaded through `withRemoteEnvFiles(...)` exist only inside the wrapped block.
 
 ## Precedence rules
 
@@ -148,13 +148,10 @@ pipeline {
   stages {
     stage('Integration Tests') {
       steps {
-        wrap([
-          $class: 'RemoteEnvFileBuildWrapper',
-          sources: [
-            [
-              sourceUrl: 'https://config.example.com/team/service/test.env',
-              credentialsId: 'config-basic-auth'
-            ]
+        withRemoteEnvFiles(sources: [
+          [
+            sourceUrl: 'https://config.example.com/team/service/test.env',
+            credentialsId: 'config-basic-auth'
           ]
         ]) {
           sh './scripts/run-integration-tests.sh'
@@ -174,12 +171,9 @@ pipeline {
   stages {
     stage('Verify Merged Env') {
       steps {
-        wrap([
-          $class: 'RemoteEnvFileBuildWrapper',
-          sources: [
-            [sourceUrl: 'https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/base.env'],
-            [sourceUrl: 'https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/prod.env']
-          ]
+        withRemoteEnvFiles(sources: [
+          [sourceUrl: 'https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/base.env'],
+          [sourceUrl: 'https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/prod.env']
         ]) {
           sh 'test "$APP_MODE" = "prod"'
           sh 'test "$COMMON_VALUE" = "prod-override"'
@@ -216,7 +210,7 @@ The plugin expects URLs that return plain text dotenv content over HTTPS. The UR
 No credentials required.
 
 ```text
-https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/public.env
+https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/public.env
 ```
 
 ### Public GitHub raw files with precedence
@@ -224,8 +218,8 @@ https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/p
 Use two sources to layer shared and environment-specific settings.
 
 ```text
-https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/base.env
-https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/prod.env
+https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/base.env
+https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/prod.env
 ```
 
 Put `base.env` first and `prod.env` second so `prod.env` wins on overlapping keys.
@@ -241,13 +235,10 @@ https://raw.githubusercontent.com/your-org/private-config-repo/main/environments
 Pipeline example:
 
 ```groovy
-wrap([
-  $class: 'RemoteEnvFileBuildWrapper',
-  sources: [
-    [
-      sourceUrl: 'https://raw.githubusercontent.com/your-org/private-config-repo/main/environments/prod.env',
-      credentialsId: 'github-pat'
-    ]
+withRemoteEnvFiles(sources: [
+  [
+    sourceUrl: 'https://raw.githubusercontent.com/your-org/private-config-repo/main/environments/prod.env',
+    credentialsId: 'github-pat'
   ]
 ]) {
   sh './deploy.sh'
@@ -284,19 +275,19 @@ This repository includes ready-to-use fixture files under `examples/`.
 
 Successful fetches:
 
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/public.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/quoted.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/base.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/prod.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/public.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/quoted.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/base.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/prod.env`
 
 Intentional failure cases:
 
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/invalid-export.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/duplicate-keys.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/interpolation.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/duplicate-case.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/blocked-path.env`
-- `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/blocked-loader.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/invalid-export.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/duplicate-keys.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/interpolation.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/duplicate-case.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/blocked-path.env`
+- `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/blocked-loader.env`
 
 Quick test Jenkinsfile:
 
@@ -307,12 +298,9 @@ pipeline {
   stages {
     stage('Verify Remote Env') {
       steps {
-        wrap([
-          $class: 'RemoteEnvFileBuildWrapper',
-          sources: [
-            [sourceUrl: 'https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/base.env'],
-            [sourceUrl: 'https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/prod.env']
-          ]
+        withRemoteEnvFiles(sources: [
+          [sourceUrl: 'https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/base.env'],
+          [sourceUrl: 'https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/prod.env']
         ]) {
           sh 'test "$APP_NAME" = "remote-env-file-demo"'
           sh 'test "$APP_MODE" = "prod"'
@@ -451,8 +439,8 @@ Use `docker compose down -v` when you want to reset Jenkins state completely.
 1. Start Jenkins with Docker.
 2. Create a Pipeline job.
 3. In the job configuration, enable `Load environment variables from a remote HTTPS dotenv file`.
-4. Add `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/base.env` as the first source.
-5. Add `https://raw.githubusercontent.com/THelsby/remote-env-file-plugin/main/examples/prod.env` as the second source.
+4. Add `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/base.env` as the first source.
+5. Add `https://raw.githubusercontent.com/jenkinsci/remote-env-file-plugin/main/examples/prod.env` as the second source.
 6. Save the job.
 7. Use a Jenkinsfile like this:
 

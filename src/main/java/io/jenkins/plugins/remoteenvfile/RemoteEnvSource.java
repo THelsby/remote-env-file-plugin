@@ -15,6 +15,7 @@ import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.verb.POST;
 
 public class RemoteEnvSource extends AbstractDescribableImpl<RemoteEnvSource> {
 
@@ -61,6 +62,7 @@ public class RemoteEnvSource extends AbstractDescribableImpl<RemoteEnvSource> {
             return "Remote source";
         }
 
+        @POST
         public FormValidation doCheckSourceUrl(@QueryParameter String value) {
             try {
                 RemoteEnvFileResolver.validateSourceUrl(value);
@@ -70,6 +72,7 @@ public class RemoteEnvSource extends AbstractDescribableImpl<RemoteEnvSource> {
             }
         }
 
+        @POST
         public ListBoxModel doFillCredentialsIdItems(
                 @AncestorInPath Item item,
                 @QueryParameter String credentialsId,

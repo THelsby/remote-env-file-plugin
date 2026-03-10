@@ -21,9 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.SSLContext;
 import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -40,6 +38,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.TestBuilder;
+import org.kohsuke.stapler.verb.POST;
 
 public class RemoteEnvFileBuildWrapperTest {
 
@@ -344,10 +343,10 @@ public class RemoteEnvFileBuildWrapperTest {
             WorkflowJob job = r.createProject(WorkflowJob.class, "pipeline");
             job.setDefinition(new CpsFlowDefinition(
                     "node {\n"
-                            + "  wrap([$class: 'RemoteEnvFileBuildWrapper', sources: [\n"
+                            + "  withRemoteEnvFiles(sources: [\n"
                             + "    [sourceUrl: '" + escapeGroovy(server.url("/base.env")) + "'],\n"
                             + "    [sourceUrl: '" + escapeGroovy(server.url("/override.env")) + "']\n"
-                            + "  ]]) {\n"
+                            + "  ]) {\n"
                             + "    if (env.PIPELINE_ONLY != 'inside') { error('missing inside wrapper') }\n"
                             + "    if (env.app_mode != 'override') { error('missing overridden wrapper value') }\n"
                             + "  }\n"
@@ -373,9 +372,9 @@ public class RemoteEnvFileBuildWrapperTest {
             WorkflowJob job = r.createProject(WorkflowJob.class, "pipeline-blocked-wrapper");
             job.setDefinition(new CpsFlowDefinition(
                     "node {\n"
-                            + "  wrap([$class: 'RemoteEnvFileBuildWrapper', sources: [[sourceUrl: '"
+                            + "  withRemoteEnvFiles(sources: [[sourceUrl: '"
                             + escapeGroovy(server.url("/blocked-pipeline.env"))
-                            + "']]]) {\n"
+                            + "']]) {\n"
                             + "    error('wrapper should have failed before this point')\n"
                             + "  }\n"
                             + "}\n",
@@ -457,7 +456,18 @@ public class RemoteEnvFileBuildWrapperTest {
         Assert.assertTrue(html.contains("sources"));
         Assert.assertTrue(html.contains("sourceUrl"));
         Assert.assertTrue(html.contains("credentialsId"));
+        Assert.assertTrue(html.contains("checkMethod=\"post\""));
         Assert.assertTrue(html.contains("does not mask or protect"));
+    }
+
+    @Test
+    public void usesPostForSourceValidationAndCredentialDropdownEndpoints() throws Exception {
+        Assert.assertTrue(RemoteEnvSource.DescriptorImpl.class
+                .getMethod("doCheckSourceUrl", String.class)
+                .isAnnotationPresent(POST.class));
+        Assert.assertTrue(RemoteEnvSource.DescriptorImpl.class
+                .getMethod("doFillCredentialsIdItems", hudson.model.Item.class, String.class, String.class)
+                .isAnnotationPresent(POST.class));
     }
 
     @Test
@@ -611,10 +621,9 @@ public class RemoteEnvFileBuildWrapperTest {
     private static final class HttpsTestServer implements AutoCloseable {
 
         private final MockWebServer server;
-        private final SSLSocketFactory originalFactory;
-        private final HostnameVerifier originalVerifier;
+        private final SSLContext originalContext;
 
-        private HttpsTestServer() throws IOException {
+        private HttpsTestServer() throws Exception {
             HeldCertificate certificate = new HeldCertificate.Builder()
                     .commonName("localhost")
                     .addSubjectAlternativeName("localhost")
@@ -626,15 +635,13 @@ public class RemoteEnvFileBuildWrapperTest {
                     .addTrustedCertificate(certificate.certificate())
                     .build();
 
-            this.originalFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
-            this.originalVerifier = HttpsURLConnection.getDefaultHostnameVerifier();
+            this.originalContext = SSLContext.getDefault();
 
             this.server = new MockWebServer();
             this.server.useHttps(serverCertificates.sslSocketFactory(), false);
             this.server.start();
 
-            HttpsURLConnection.setDefaultSSLSocketFactory(clientCertificates.sslSocketFactory());
-            HttpsURLConnection.setDefaultHostnameVerifier((hostname, session) -> "localhost".equals(hostname));
+            SSLContext.setDefault(clientCertificates.sslContext());
         }
 
         private String url(String path) {
@@ -642,9 +649,8 @@ public class RemoteEnvFileBuildWrapperTest {
         }
 
         @Override
-        public void close() throws IOException {
-            HttpsURLConnection.setDefaultSSLSocketFactory(originalFactory);
-            HttpsURLConnection.setDefaultHostnameVerifier(originalVerifier);
+        public void close() throws Exception {
+            SSLContext.setDefault(originalContext);
             server.shutdown();
         }
     }

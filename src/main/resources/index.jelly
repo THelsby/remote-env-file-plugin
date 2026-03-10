@@ -1,4 +1,5 @@
 <?jelly escape-by-default='true'?>
 <div>
-  Loads environment variables from a remote HTTPS dotenv file into a build wrapper scope.
+  Loads environment variables from one or more remote HTTPS dotenv files for Freestyle jobs and the Pipeline
+  <code>withRemoteEnvFiles(...)</code> step.
 </div>

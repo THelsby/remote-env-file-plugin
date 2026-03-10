@@ -38,11 +38,8 @@ createOrUpdateJob(
         "Expected SUCCESS. Wrap mode using the local HTTPS fixture service and public.env.",
         """
 node {
-  wrap([
-    \$class: 'RemoteEnvFileBuildWrapper',
-    sources: [
-      [sourceUrl: '${fixtureBase}/public.env']
-    ]
+  withRemoteEnvFiles(sources: [
+    [sourceUrl: '${fixtureBase}/public.env']
   ]) {
     if (env.APP_NAME != 'remote-env-file-demo') {
       error('APP_NAME was not loaded from the remote env file')
@@ -61,12 +58,9 @@ createOrUpdateJob(
         "Expected SUCCESS. Wrap mode using base.env then prod.env to verify later sources override earlier remote values.",
         """
 node {
-  wrap([
-    \$class: 'RemoteEnvFileBuildWrapper',
-    sources: [
-      [sourceUrl: '${fixtureBase}/base.env'],
-      [sourceUrl: '${fixtureBase}/prod.env']
-    ]
+  withRemoteEnvFiles(sources: [
+    [sourceUrl: '${fixtureBase}/base.env'],
+    [sourceUrl: '${fixtureBase}/prod.env']
   ]) {
     if (env.APP_NAME != 'remote-env-file-demo') {
       error('APP_NAME was not loaded from the layered remote env files')
@@ -91,11 +85,8 @@ createOrUpdateJob(
         "Expected FAILURE. Wrap mode using blocked-path.env to verify PATH rejection.",
         """
 node {
-  wrap([
-    \$class: 'RemoteEnvFileBuildWrapper',
-    sources: [
-      [sourceUrl: '${fixtureBase}/blocked-path.env']
-    ]
+  withRemoteEnvFiles(sources: [
+    [sourceUrl: '${fixtureBase}/blocked-path.env']
   ]) {
     error('The blocked PATH fixture should fail before this step runs')
   }
@@ -108,11 +99,8 @@ createOrUpdateJob(
         "Expected FAILURE. Wrap mode using duplicate-case.env to verify case-insensitive duplicate rejection.",
         """
 node {
-  wrap([
-    \$class: 'RemoteEnvFileBuildWrapper',
-    sources: [
-      [sourceUrl: '${fixtureBase}/duplicate-case.env']
-    ]
+  withRemoteEnvFiles(sources: [
+    [sourceUrl: '${fixtureBase}/duplicate-case.env']
   ]) {
     error('The duplicate-case fixture should fail before this step runs')
   }

@@ -25,4 +25,6 @@ For the `job-property-*` examples, open the job `Configure` page, enable:
 
 Then add the source URLs shown in the comment at the top of the Jenkinsfile, in the same order they are listed.
 
+The `wrap-*` examples use the `withRemoteEnvFiles(...)` Pipeline step provided by this plugin.
+
 Remote values loaded by these examples are plain environment variables. If the Pipeline echoes them, Jenkins does not mask or protect them automatically.
