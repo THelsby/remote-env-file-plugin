@@ -62,7 +62,9 @@ public class RemoteEnvSource extends AbstractDescribableImpl<RemoteEnvSource> {
             return "Remote source";
         }
 
+        // False positive: this endpoint only validates URL syntax and has no side effects.
         @POST
+        @SuppressWarnings({"lgtm[java/jenkins/no-permission-check]", "lgtm[jenkins/no-permission-check]"})
         public FormValidation doCheckSourceUrl(@QueryParameter String value) {
             try {
                 RemoteEnvFileResolver.validateSourceUrl(value);

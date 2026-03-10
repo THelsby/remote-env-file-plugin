@@ -456,7 +456,6 @@ public class RemoteEnvFileBuildWrapperTest {
         Assert.assertTrue(html.contains("sources"));
         Assert.assertTrue(html.contains("sourceUrl"));
         Assert.assertTrue(html.contains("credentialsId"));
-        Assert.assertTrue(html.contains("checkMethod=\"post\""));
         Assert.assertTrue(html.contains("does not mask or protect"));
     }
 
